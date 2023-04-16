@@ -1,5 +1,10 @@
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
+use components::Celestial;
+use constants::CelestialBodyConfig;
+
+mod components;
+mod constants;
 
 fn main() {
     App::new()
@@ -15,9 +20,13 @@ fn main() {
         }))
         .add_plugin(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0))
         .add_plugin(RapierDebugRenderPlugin::default())
+        .insert_resource(RapierConfiguration {
+            gravity: Vect::ZERO,
+            ..default()
+        })
         .add_startup_system(setup_graphics)
-        .add_startup_system(setup_physics)
-        .add_system(print_ball_altitude)
+        .add_startup_system(setup_universe)
+        .add_system(player_camera_control)
         .run();
 }
 
@@ -26,22 +35,38 @@ fn setup_graphics(mut commands: Commands) {
     commands.spawn(Camera2dBundle::default());
 }
 
-fn setup_physics(mut commands: Commands) {
-    /* Create the ground. */
-    commands
-        .spawn(Collider::cuboid(500.0, 50.0))
-        .insert(TransformBundle::from(Transform::from_xyz(0.0, -100.0, 0.0)));
-
-    /* Create the bouncing ball. */
-    commands
-        .spawn(RigidBody::Dynamic)
-        .insert(Collider::ball(50.0))
-        .insert(Restitution::coefficient(0.7))
-        .insert(TransformBundle::from(Transform::from_xyz(0.0, 400.0, 0.0)));
+fn setup_universe(mut commands: Commands) {
+    // Create the sun
+    spawn_celestial_body(&mut commands, &constants::SAGITTARIUS_A_STAR);
+    spawn_celestial_body(&mut commands, &constants::SUN);
 }
 
-fn print_ball_altitude(positions: Query<&Transform, With<RigidBody>>) {
-    for transform in positions.iter() {
-        println!("Ball altitude: {}", transform.translation.y);
+fn spawn_celestial_body(commands: &mut Commands, config: &CelestialBodyConfig) {
+    commands
+    .spawn(RigidBody::Dynamic)
+    .insert(Collider::ball(config.radius))
+    .insert(TransformBundle::from(Transform::from_xyz(0.0, 5.0, 0.0)))
+    .insert(Velocity {
+        linvel: Vec2::new(0.0, 0.0),
+        angvel: config.angular_velocity,
+    })
+    .insert(AdditionalMassProperties::Mass(config.mass));
+}
+
+
+fn player_camera_control(kb: Res<Input<KeyCode>>, time: Res<Time>, mut query: Query<&mut OrthographicProjection, With<Camera>>) {
+    let dist = 10.0 * time.delta().as_secs_f32();
+
+    for mut projection in query.iter_mut() {
+        let mut log_scale = projection.scale.ln();
+
+        if kb.pressed(KeyCode::Z) {
+            log_scale -= dist;
+        }
+        if kb.pressed(KeyCode::X) {
+            log_scale += dist;
+        }
+
+        projection.scale = log_scale.exp();
     }
 }
